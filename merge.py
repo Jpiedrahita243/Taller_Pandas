@@ -1,29 +1,53 @@
 from pathlib import Path
 
+import pandas as pd
+
 PROCESSED = Path(__file__).parent / "Data" / "processed"
 
 
 def validar_premerge(clientes, ventas):
-    """Revisa que el merge se pueda hacer. Devuelve True si todo está bien, False si no.
+    """Valida las claves y reporta ventas sin cliente asociado."""
+    correcto = True
+    for nombre, df in (("clientes", clientes), ("ventas", ventas)):
+        if "id_cliente" not in df.columns:
+            print(f"Error: falta la columna id_cliente en {nombre}.")
+            correcto = False
 
-    Revisar:
-    - Que exista la columna "id_cliente" en los dos dataframes.
-    - Que "id_cliente" no esté repetido en clientes.
-    - Que "id_cliente" tenga el mismo tipo en los dos dataframes.
-    - Cuántas ventas no tienen cliente asociado (esto solo se informa, no falla).
-    """
-    # TODO 6: escribir las validaciones y devolver True o False.
-    return True
+    if not correcto:
+        return False
+
+    if clientes["id_cliente"].duplicated().any():
+        cantidad = int(clientes["id_cliente"].duplicated().sum())
+        print(f"Error: id_cliente está repetido en clientes ({cantidad} duplicados).")
+        correcto = False
+    else:
+        print("Validación: id_cliente no está repetido en clientes.")
+
+    tipo_clientes = clientes["id_cliente"].dtype
+    tipo_ventas = ventas["id_cliente"].dtype
+    if tipo_clientes != tipo_ventas:
+        print(f"Error: tipos distintos para id_cliente: clientes={tipo_clientes}, ventas={tipo_ventas}.")
+        correcto = False
+    else:
+        print(f"Validación: id_cliente tiene el mismo tipo en ambas tablas ({tipo_clientes}).")
+
+    ids_cliente = clientes["id_cliente"].dropna().unique()
+    sin_cliente = int((~ventas["id_cliente"].isin(ids_cliente)).sum())
+    print(f"Ventas sin cliente asociado: {sin_cliente} (se conservan con merge left).")
+    return correcto
 
 
 def unir(clientes, ventas):
-    """Une ventas con clientes usando "id_cliente" y guarda el resultado en Data/processed/merge.csv.
+    """Valida, une ventas con clientes y guarda Data/processed/merge.csv."""
+    if not validar_premerge(clientes, ventas):
+        print("No se realizó el merge: corrige las validaciones indicadas.")
+        return None
 
-    Pistas:
-    - Usar pd.merge(...) o ventas.merge(...).
-    - Usar how="left" para no perder ventas.
-    - Usar validate="m:1" para confirmar que cada venta tiene un solo cliente.
-    - Guardar con df.to_csv(...) en PROCESSED / "merge.csv".
-    """
-    # TODO 7: validar con validar_premerge(), hacer el merge, guardar el CSV y devolver el dataframe.
-    return None
+    df = ventas.merge(clientes, on="id_cliente", how="left", validate="m:1")
+    PROCESSED.mkdir(parents=True, exist_ok=True)
+    ruta = PROCESSED / "merge.csv"
+    df.to_csv(ruta, index=False)
+    print(f"Merge realizado: {df.shape[0]} filas y {df.shape[1]} columnas.")
+    print(f"Archivo guardado en: {ruta}")
+    print(df.head())
+    return df
